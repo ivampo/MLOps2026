@@ -35,3 +35,36 @@ web = [
 
 [tool.uv]
 default-groups = ["web", "dev"]
+
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "RUF",
+    "I",
+    "E", "W",
+    "N",
+    "UP",
+    "C4",
+    "DTZ",
+    "LOG", "G",
+    "PT",
+    "F",
+    "S",
+    "B",
+    "SIM",
+    "ASYNC",
+    "T20",
+    "PIE",
+    "TD",
+    "FAST"
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
