@@ -1,0 +1,11 @@
+.git
+.idea
+.vscode
+__pycache__/
+.venv/
+.env
+.env.*
+!.env.example
+.coverage
+Dockerfile
+docker-compose.yml
