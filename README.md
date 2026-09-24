@@ -12,6 +12,7 @@
 ## Содержание
 
 - [Быстрый старт](#быстрый-старт)
+- [Запуск готового релиза](#запуск-готового-релиза)
 - [Как устроен сервис](#как-устроен-сервис)
 - [Локальная разработка](#локальная-разработка)
 - [Конфигурация](#конфигурация)
@@ -28,6 +29,9 @@
 Нужны Docker с запущенным Docker Engine и Docker Compose v2 с поддержкой `--wait`.
 Команды выполняются из корня репозитория в оболочке Bash/Zsh. Для запуска через Docker
 устанавливать Python и uv на хост не требуется.
+
+Ниже описана сборка из локальных исходников. Чтобы скачать уже собранный образ,
+перейдите к [запуску готового релиза](#запуск-готового-релиза).
 
 ### 1. Подготовить окружение
 
@@ -81,6 +85,102 @@ curl --fail-with-body http://localhost:8000/api/v1/health
 
 Если изменили `APP_PORT`, используйте его вместо `8000` в адресах и запросах.
 Корневой маршрут `/` не определён и возвращает `404`.
+
+## Запуск готового релиза
+
+Релизная сборка публикуется как Docker-образ в **GitHub Container Registry**:
+`ghcr.io/ivampo/mlops2026`. Для тега Git `v0.2.0` образ имеет тег `0.2.0` — без `v`.
+Это готовое приложение со всеми Python-зависимостями; PostgreSQL запускается отдельным
+контейнером. Клонировать репозиторий, устанавливать Python и собирать приложение не нужно.
+
+Для команд ниже нужны Docker Engine, **Docker Compose 2.24.4+** и `curl`.
+Пример использует опубликованный релиз `0.2.0`; доступные сборки можно проверить
+в [истории CD](https://github.com/ivampo/MLOps2026/actions/workflows/cd.yml).
+
+### 1. Скачать конфигурацию выбранного релиза
+
+В отдельном каталоге скачайте Compose-файл и шаблон окружения из того же тега:
+
+```bash
+mkdir -p mlops-release
+cd mlops-release
+
+curl --fail --location --output docker-compose.yml \
+  https://raw.githubusercontent.com/ivampo/MLOps2026/v0.2.0/docker-compose.yml
+curl --fail --location --output .env.example \
+  https://raw.githubusercontent.com/ivampo/MLOps2026/v0.2.0/.env.example
+```
+
+Создайте `.env`, сохранив существующий файл, если он уже есть:
+
+```bash
+test -f .env || cp .env.example .env
+```
+
+Откройте `.env` и задайте непустой `POSTGRES_PASSWORD`, как в [быстром старте](#быстрый-старт).
+Если порт `8000` уже занят другим экземпляром приложения, задайте, например, `APP_PORT=8080`.
+
+### 2. Подключить готовый образ
+
+Рядом создайте файл `compose.release.yaml`:
+
+```yaml
+services:
+  app:
+    image: ghcr.io/ivampo/mlops2026:0.2.0
+    platform: linux/amd64
+    build: !reset null
+```
+
+Дополнение сохраняет базу, том, сеть и healthcheck из основного Compose-файла,
+задаёт релизный образ и удаляет настройку локальной сборки через
+[`!reset`](https://docs.docker.com/reference/compose-file/merge/#reset-value).
+Образ `0.2.0` опубликован для `linux/amd64`; на Apple Silicon и других ARM-хостах
+для него нужна поддержка эмуляции amd64 в Docker. PostgreSQL использует образ для
+архитектуры своего хоста.
+
+### 3. Скачать образы и запустить сервисы
+
+```bash
+docker compose -f docker-compose.yml -f compose.release.yaml config --quiet
+docker compose -f docker-compose.yml -f compose.release.yaml pull
+docker compose -f docker-compose.yml -f compose.release.yaml up -d --no-build --wait
+```
+
+`pull` скачивает приложение и PostgreSQL, а `up` запускает их и дожидается healthcheck.
+Затем проверьте версию и соединение с базой:
+
+```bash
+curl --fail-with-body http://localhost:8000/api/v1/version
+curl --fail-with-body http://localhost:8000/api/v1/health
+```
+
+Для этого примера ожидаются `{"version":"0.2.0"}` и ответ с `"health": true`.
+Swagger UI доступен на <http://localhost:8000/docs>.
+Если меняли `APP_PORT`, замените `8000` в адресах своим портом.
+
+### Управление и обновление
+
+Для этого способа запуска во всех командах указывайте оба Compose-файла:
+
+```bash
+# Состояние и логи приложения
+docker compose -f docker-compose.yml -f compose.release.yaml ps
+docker compose -f docker-compose.yml -f compose.release.yaml logs --tail=100 app
+
+# Остановить и удалить контейнеры, сохранив данные PostgreSQL
+docker compose -f docker-compose.yml -f compose.release.yaml down
+```
+
+Для обновления выберите успешно опубликованный релиз, скачайте конфигурацию из его
+Git-тега и измените тег `image` в `compose.release.yaml`. Сохраните свой `.env`, затем
+повторите `pull` и `up -d --no-build --wait` с обоими файлами. Данные базы остаются
+в именованном томе при использовании того же каталога и имени Compose-проекта.
+
+Если `pull` сообщает `manifest unknown`, проверьте успешность CD и точное имя образа:
+путь записывается строчными буквами, а тег версии — без начального `v`.
+Архив **Source code** на GitHub содержит исходники; готовый контейнер скачивается
+командой `docker compose … pull`, приведённой выше.
 
 ## Как устроен сервис
 
@@ -443,8 +543,9 @@ Workflow публикует образ, но не разворачивает е�
 4. После успешного CI создайте и отправьте тег `v<версия>` на этот коммит.
 5. Проверьте результат CD и опубликованный пакет в GitHub Container Registry.
 
-Локальный Compose всегда собирает приложение из исходников через `build: .`;
-опубликованный образ из GHCR автоматически не используется.
+Основной Compose-файл использует `build: .` для сборки из исходников.
+Для опубликованного образа из GHCR используйте дополнение из раздела
+[«Запуск готового релиза»](#запуск-готового-релиза).
 
 ## Структура проекта
 
