@@ -19,4 +19,4 @@ class Formatter(logging.Formatter):
 def setup_logging(level: str = "INFO") -> None:
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(Formatter())
-    logging.basicConfig(level=level, handlers=[handler])
+    logging.basicConfig(level=level, handlers=[handler], force=True)
