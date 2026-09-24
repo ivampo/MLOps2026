@@ -1,0 +1,69 @@
+name: ci.yml
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: 0.12.15
+
+jobs:
+  lint:
+    name: рафф
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Установка uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - name: установка зависимостей
+        run: uv sync --locked
+
+      - name: pre-commit запускаем
+        run: uv run pre-commit run --all-files --show-diff-on-failure
+  test:
+    name: тестируем
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Установка uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - name: установка зависимостей
+        run: uv sync --locked
+
+      - name: тестируем
+        env:
+          POSTGRES_PASSWORD: ci-test-password
+        run: uv run pytest --cov --cov-report=term-missing
+
+  docker:
+    name: сборка
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: делаем окружение
+        run: |
+          cat > .env <<EOF
+          POSTGRES_USER=postgres
+          POSTGRES_DB=mlops
+          POSTGRES_PASSWORD=ci-test-passw
+          EOF
+
+      - name: запускаем
+        run: docker compose up -d --build --wait
+
+      - name: проверка
+        run: curl --fail-with-body --silent --show-error http://127.0.0.1:8000/api/v1/health
