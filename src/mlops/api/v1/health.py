@@ -18,7 +18,9 @@ async def health(request: Request, response: Response) -> HealthResponse:
         async with asyncio.timeout(config.health_timeout):
             pg_version, elapsed_ms = await ping(request.app.state.engine)
     except Exception as e:
-        logger.warning("postgres ping failed", exc_info=e)
+        logger.warning(
+            "postgres ping failed", exc_info=e, extra={"fields": {"component": "postgres"}}
+        )
         postgres = HealthComponent(name="postgres", health=False, error=str(e))
     else:
         postgres = HealthComponent(
