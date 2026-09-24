@@ -67,3 +67,17 @@ select = [
 
 [tool.ruff.format]
 docstring-code-format = true
+
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["src/mlops"]
+branch = true
+omit = ["src/mlops/__main__.py"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 85
