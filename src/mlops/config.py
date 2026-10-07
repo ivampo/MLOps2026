@@ -2,6 +2,7 @@ from functools import lru_cache
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy import URL
 
 
 class Config(BaseSettings):
@@ -21,10 +22,21 @@ class Config(BaseSettings):
     db_conn_timeout: int = 10
     health_timeout: int = 5
 
+    mlflow_tracking_uri: str = "http://127.0.0.1:5000"
+    mlflow_experiment_name: str = "iris-classification"
+    mlflow_model_name: str = "iris-classifier"
+    mlflow_model_alias: str = "champion"
+
     @property
-    def postgres_dsn(self):
-        password = self.postgres_password.get_secret_value()
-        return f"postgresql+asyncpg://{self.postgres_user}:{password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+    def postgres_dsn(self) -> URL:
+        return URL.create(
+            "postgresql+asyncpg",
+            username=self.postgres_user,
+            password=self.postgres_password.get_secret_value(),
+            host=self.postgres_host,
+            port=self.postgres_port,
+            database=self.postgres_db,
+        )
 
 
 @lru_cache

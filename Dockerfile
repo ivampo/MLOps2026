@@ -16,7 +16,9 @@ FROM python:3.12-slim-trixie
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
 
-RUN useradd --system --create-home app
+RUN useradd --system --create-home app \
+    && mkdir /mlartifacts \
+    && chown app:app /mlartifacts
 
 WORKDIR /app
 COPY --from=builder --chown=app:app /app/.venv /app/.venv

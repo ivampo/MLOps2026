@@ -1,3 +1,18 @@
+x-python: &python
+  build: .
+  image: mlops2026:local
+  env_file:
+    - .env
+  environment:
+    POSTGRES_HOST: db
+    MLFLOW_TRACKING_URI: http://mlflow:5000
+  networks:
+    - backend
+  logging:
+    options:
+      max-size: 10m
+      max-file: "3"
+
 services:
   db:
     image: postgres:16-alpine
@@ -23,17 +38,36 @@ services:
         max-size: 10m
         max-file: "3"
 
-  app:
-    build: .
-    env_file:
-      - .env
-    environment:
-      POSTGRES_HOST: db
+  mlflow:
+    <<: *python
+    command: ["mlops-tracking"]
     depends_on:
       db:
         condition: service_healthy
-    networks:
-      - backend
+    volumes:
+      - mlartifacts:/mlartifacts
+    ports:
+      - "127.0.0.1:${MLFLOW_PORT:-5000}:5000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+
+  app:
+    <<: *python
+    depends_on:
+      db:
+        condition: service_healthy
+      mlflow:
+        condition: service_healthy
     ports:
       - "${APP_PORT:-8000}:8000"
     healthcheck:
@@ -41,20 +75,17 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 30s
     restart: unless-stopped
     deploy:
       resources:
         limits:
           cpus: "1.0"
-          memory: 512M
-    logging:
-      options:
-        max-size: 10m
-        max-file: "3"
+          memory: 1G
 
 volumes:
   pgdata:
+  mlartifacts:
 
 networks:
   backend:
