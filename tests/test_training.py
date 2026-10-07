@@ -4,13 +4,16 @@ from pathlib import Path
 import mlflow
 import pandas as pd
 import pytest
+from fastapi.testclient import TestClient
 from mlflow import MlflowClient
 
 from mlops.config import get_config
+from mlops.data import FEATURES
+from mlops.main import app
 from mlops.train import train
 
 
-def test_training_registry_and_artifacts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_training_registry_and_alias_switch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # Настоящий MLflow и настоящие модели, изолированные от рабочего сервера.
     tracking_uri = f"sqlite:///{tmp_path / 'mlflow.db'}"
     monkeypatch.setenv("MLFLOW_TRACKING_URI", tracking_uri)
@@ -70,4 +73,21 @@ def test_training_registry_and_artifacts(tmp_path: Path, monkeypatch: pytest.Mon
     frame = pd.read_csv(csv_path, index_col="row_id")
     assert not frame.loc[list(train_ids | val_ids | test_ids)].duplicated().any()
 
+    other_version = next(
+        version.version for version in versions if version.version != champion.version
+    )
+    sample = frame[FEATURES].iloc[0].to_dict()
+    with TestClient(app) as http:
+        response = http.post("/process", json={"samples": [sample]})
+        assert response.status_code == 200
+        assert response.json()["model"]["version"] == str(champion.version)
+        client.set_registered_model_alias(
+            config.mlflow_model_name, config.mlflow_model_alias, other_version
+        )
+        # Уже запущенный процесс сохраняет прежнюю модель.
+        assert http.get("/api/v1/model").json()["version"] == str(champion.version)
+    with TestClient(app) as http:
+        response = http.post("/process", json={"samples": [sample]})
+        assert response.status_code == 200
+        assert response.json()["model"]["version"] == str(other_version)
     mlflow.set_tracking_uri("http://127.0.0.1:5000")

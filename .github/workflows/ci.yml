@@ -63,7 +63,24 @@ jobs:
           EOF
 
       - name: запускаем
-        run: docker compose up -d --build --wait
+        run: |
+          docker compose up -d --build --wait db mlflow
+          docker compose --profile training run --rm train
+          docker compose up -d --wait app
 
       - name: проверка
-        run: curl --fail-with-body --silent --show-error http://127.0.0.1:8000/api/v1/health
+        run: |
+          curl --fail-with-body --silent --show-error http://127.0.0.1:8000/api/v1/health
+          curl --fail-with-body --silent --show-error http://127.0.0.1:8000/api/v1/model
+          curl --fail-with-body --silent --show-error \
+            -H 'Content-Type: application/json' \
+            -d '{"samples":[{"sepal_length":5.1,"sepal_width":3.5,"petal_length":1.4,"petal_width":0.2}]}' \
+            http://127.0.0.1:8000/process
+
+      - name: Логи при ошибке
+        if: failure()
+        run: docker compose logs --tail=100
+
+      - name: Остановка
+        if: always()
+        run: docker compose down -v
