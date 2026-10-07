@@ -5,3 +5,9 @@
 __pycache__/
 !.env.example
 .coverage
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+mlruns/
+mlartifacts/
+*.db

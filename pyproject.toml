@@ -1,7 +1,7 @@
 [project]
 name = "mlops"
-version = "0.2.0"
-description = "Add your description here"
+version = "0.3.0"
+description = "Асинхронный ML-сервис с MLflow Tracking и Model Registry"
 readme = "README.md"
 authors = [
     { name = "Ivan Startsev", email = "aladush3k@mail.ru" }
@@ -32,15 +32,23 @@ web = [
     "sqlalchemy[asyncio]>=2.0.54",
     "uvicorn[standard]>=0.53.0",
 ]
+ml = [
+    "matplotlib>=3.10,<4",
+    "mlflow>=3.5,<4",
+    "pandas>=2.2,<4",
+    "psycopg[binary]>=3.2,<4",
+    "scikit-learn>=1.7,<2",
+]
 
 [tool.uv]
-default-groups = ["web", "dev"]
+default-groups = ["web", "ml", "dev"]
 
 
 [tool.ruff]
 line-length = 100
 
 [tool.ruff.lint]
+allowed-confusables = ["а", "с", "о"]
 select = [
     "RUF",
     "I",

@@ -11,6 +11,7 @@ repos:
       - id: check-merge-conflict
       - id: check-added-large-files
         args: ['--maxkb=512']
+        exclude: ^uv\.lock$
       - id: check-symlinks
       - id: check-case-conflict
       - id: detect-private-key
