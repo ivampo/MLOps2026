@@ -56,6 +56,34 @@ jobs:
       - name: проверка
         run: |
           IMAGE="${REGISTRY}/${IMAGE_NAME,,}:${GITHUB_REF_NAME#v}"
-          docker run -d --rm -e POSTGRES_PASSWORD=cd-test -p 8000:8000 --name released "$IMAGE"
-          curl --retry 20 --retry-delay 1 --retry-all-errors --fail-with-body \
-               --silent --show-error http://127.0.0.1:8000/api/v1/version
+          cat > .env <<EOF
+          POSTGRES_USER=mlops
+          POSTGRES_DB=mlops
+          POSTGRES_PASSWORD=cd-test
+          EOF
+          cat > compose.release.yaml <<EOF
+          services:
+            app:
+              image: $IMAGE
+            mlflow:
+              image: $IMAGE
+            train:
+              image: $IMAGE
+          EOF
+          docker compose -f docker-compose.yml -f compose.release.yaml pull db mlflow app
+          docker compose -f docker-compose.yml -f compose.release.yaml up -d --no-build --wait db mlflow
+          docker compose -f docker-compose.yml -f compose.release.yaml --profile training run --rm --no-deps train
+          docker compose -f docker-compose.yml -f compose.release.yaml up -d --no-build --wait app
+          curl --fail-with-body --silent --show-error http://127.0.0.1:8000/api/v1/version
+          curl --fail-with-body --silent --show-error \
+            -H 'Content-Type: application/json' \
+            -d '{"samples":[{"sepal_length":5.1,"sepal_width":3.5,"petal_length":1.4,"petal_width":0.2}]}' \
+            http://127.0.0.1:8000/process
+
+      - name: Логи при ошибке
+        if: failure()
+        run: docker compose -f docker-compose.yml -f compose.release.yaml logs --tail=100
+
+      - name: Остановка
+        if: always()
+        run: docker compose -f docker-compose.yml -f compose.release.yaml down -v
