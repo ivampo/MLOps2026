@@ -39,8 +39,10 @@ def test_traceback_in_log() -> None:
     assert payload["level"] == "ERROR"
 
 
-def test_setup_logging() -> None:
-    setup_logging("DEBUG")
+def test_setup_logging(monkeypatch) -> None:
     root = logging.getLogger()
+    monkeypatch.setattr(root, "level", root.level)
+    monkeypatch.setattr(root, "handlers", root.handlers[:])
+    setup_logging("DEBUG")
     assert root.level == logging.DEBUG
     assert any(isinstance(h.formatter, Formatter) for h in root.handlers)
