@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -26,6 +26,7 @@ class Config(BaseSettings):
     mlflow_experiment_name: str = "iris-classification"
     mlflow_model_name: str = "iris-classifier"
     mlflow_model_alias: str = "champion"
+    model_cache_size: int = Field(default=3, ge=1, le=10)
 
     @property
     def postgres_dsn(self) -> URL:

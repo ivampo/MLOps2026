@@ -45,7 +45,7 @@ class ProcessRequest(BaseModel):
 class ModelInfo(BaseModel):
     name: str
     version: str
-    alias: str
+    alias: str | None
     run_id: str
 
 
@@ -57,3 +57,20 @@ class Prediction(BaseModel):
 class ProcessResponse(BaseModel):
     model: ModelInfo
     predictions: list[Prediction]
+
+
+class ModelSwitchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: str = Field(pattern=r"^[1-9][0-9]*$", max_length=20)
+
+
+class ModelSwitchResponse(BaseModel):
+    model: ModelInfo
+    cache_hit: bool
+
+
+class ModelCacheResponse(BaseModel):
+    active: ModelInfo
+    versions: list[str]
+    capacity: int

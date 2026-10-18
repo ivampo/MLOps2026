@@ -24,6 +24,7 @@ from sklearn.preprocessing import StandardScaler
 from mlops.config import get_config
 from mlops.data import CLASSES, DATA_SOURCE, FEATURES, load_dataset
 from mlops.logging import setup_logging
+from mlops.views import configure_comparison_view
 
 logger = logging.getLogger(__name__)
 SEED = 42
@@ -124,7 +125,8 @@ def evaluate(model: Pipeline, frame: pd.DataFrame, prefix: str) -> dict[str, flo
 def train() -> dict[str, str]:
     config = get_config()
     mlflow.set_tracking_uri(config.mlflow_tracking_uri)
-    mlflow.set_experiment(config.mlflow_experiment_name)
+    experiment = mlflow.set_experiment(config.mlflow_experiment_name)
+    configure_comparison_view(MlflowClient(), experiment.experiment_id)
     frame = load_dataset()
     clean = frame.drop_duplicates()
     development, test = train_test_split(

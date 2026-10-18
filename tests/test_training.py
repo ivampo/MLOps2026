@@ -81,6 +81,22 @@ def test_training_registry_and_alias_switch(tmp_path: Path, monkeypatch: pytest.
         response = http.post("/process", json={"samples": [sample]})
         assert response.status_code == 200
         assert response.json()["model"]["version"] == str(champion.version)
+        switched = http.post("/api/v1/model/switch", json={"version": str(other_version)})
+        assert switched.status_code == 200
+        assert switched.json()["cache_hit"] is False
+        assert switched.json()["model"]["alias"] is None
+        assert http.post("/process", json={"samples": [sample]}).json()["model"]["version"] == str(
+            other_version
+        )
+        restored = http.post("/api/v1/model/switch", json={"version": str(champion.version)})
+        assert restored.json()["cache_hit"] is True
+        assert (
+            client.get_model_version_by_alias(
+                config.mlflow_model_name, config.mlflow_model_alias
+            ).version
+            == champion.version
+        )
+        assert len(client.search_model_versions(f"name='{config.mlflow_model_name}'")) == 2
         client.set_registered_model_alias(
             config.mlflow_model_name, config.mlflow_model_alias, other_version
         )

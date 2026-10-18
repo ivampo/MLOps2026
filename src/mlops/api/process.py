@@ -9,6 +9,6 @@ router = APIRouter(tags=["inference"])
 
 @router.post("/process")
 async def process(payload: ProcessRequest, request: Request) -> ProcessResponse:
-    model = request.app.state.model
+    model = request.app.state.model_cache.active
     predictions = await asyncio.to_thread(model.predict, payload.samples)
     return ProcessResponse(model=model.info, predictions=predictions)

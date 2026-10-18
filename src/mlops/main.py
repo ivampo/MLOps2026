@@ -10,7 +10,7 @@ from fastapi import FastAPI, Request, Response
 from mlops.api import healthz, process, v1
 from mlops.config import get_config
 from mlops.db import get_engine
-from mlops.model import load_model
+from mlops.model import ModelCache, load_model
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     config = get_config()
     app.state.engine = get_engine(config)
     try:
-        app.state.model = await asyncio.to_thread(load_model, config)
+        app.state.model_cache = ModelCache(config, await asyncio.to_thread(load_model, config))
         logger.info(
             "app started",
             extra={
@@ -32,12 +32,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     "log_level": config.log_level,
                     "postgres_host": config.postgres_host,
                     "postgres_db": config.postgres_db,
-                    "model": app.state.model.info.model_dump(),
+                    "model": app.state.model_cache.active.info.model_dump(),
                 }
             },
         )
         yield
     finally:
+        if hasattr(app.state, "model_cache"):
+            del app.state.model_cache
         await app.state.engine.dispose()
         logger.info("engine disposed")
 
