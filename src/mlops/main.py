@@ -10,7 +10,9 @@ from fastapi import FastAPI, Request, Response
 from mlops.api import healthz, process, v1
 from mlops.config import get_config
 from mlops.db import get_engine
+from mlops.messaging import create_broker, declare_queues
 from mlops.model import ModelCache, load_model
+from mlops.storage import init_storage
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +24,12 @@ access_logger = logging.getLogger("mlops.access")
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     config = get_config()
     app.state.engine = get_engine(config)
+    app.state.broker = create_broker(config)
+    app.state.publish_slots = asyncio.Queue(maxsize=config.api_max_inflight)
     try:
+        await init_storage(app.state.engine)
+        await app.state.broker.connect()
+        await declare_queues(app.state.broker, config)
         app.state.model_cache = ModelCache(config, await asyncio.to_thread(load_model, config))
         logger.info(
             "app started",
@@ -40,6 +47,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         if hasattr(app.state, "model_cache"):
             del app.state.model_cache
+        await app.state.broker.stop()
         await app.state.engine.dispose()
         logger.info("engine disposed")
 

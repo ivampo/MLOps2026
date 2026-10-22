@@ -1,11 +1,16 @@
 x-python: &python
+  init: true
   build: .
   image: mlops2026:local
   env_file:
     - .env
-  environment:
+  environment: &python-environment
     POSTGRES_HOST: db
     MLFLOW_TRACKING_URI: http://mlflow:5000
+    RABBITMQ_HOST: rabbitmq
+    OMP_NUM_THREADS: "1"
+    OPENBLAS_NUM_THREADS: "1"
+    MKL_NUM_THREADS: "1"
   networks:
     - backend
   logging:
@@ -15,6 +20,7 @@ x-python: &python
 
 services:
   db:
+    init: true
     image: postgres:16-alpine
     env_file:
       - .env
@@ -31,7 +37,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1'
+          cpus: "${MLOPS_CPU_LIMIT:-1}"
           memory: 1G
     logging:
       options:
@@ -41,13 +47,16 @@ services:
   mlflow:
     <<: *python
     command: ["mlops-tracking"]
+    environment:
+      <<: *python-environment
+      MLFLOW_SERVER_ENABLE_JOB_EXECUTION: "false"
     depends_on:
       db:
         condition: service_healthy
     volumes:
       - mlartifacts:/mlartifacts
     ports:
-      - "127.0.0.1:${MLFLOW_PORT:-5000}:5000"
+      - "127.0.0.1:${MLFLOW_PORT:-5001}:5000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=5)"]
       interval: 10s
@@ -58,7 +67,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "1"
+          cpus: "${MLOPS_CPU_LIMIT:-1}"
           memory: 1G
 
   train:
@@ -71,15 +80,17 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "1"
+          cpus: "${MLOPS_CPU_LIMIT:-1}"
           memory: 1G
 
   app:
     <<: *python
     depends_on:
+      mlflow:
+        condition: service_healthy
       db:
         condition: service_healthy
-      mlflow:
+      rabbitmq:
         condition: service_healthy
     ports:
       - "${APP_PORT:-8000}:8000"
@@ -93,12 +104,74 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "1.0"
+          cpus: "${MLOPS_CPU_LIMIT:-1}"
+          memory: 1G
+
+  worker:
+    <<: *python
+    command: ["uvicorn", "mlops.worker:worker_factory", "--factory", "--host", "0.0.0.0", "--port", "8001"]
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      mlflow:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/healthz', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    stop_grace_period: 70s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "${MLOPS_CPU_LIMIT:-1}"
+          memory: 1G
+
+  source:
+    <<: *python
+    command: ["mlops-source", "--count", "100"]
+    profiles: ["tools"]
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  rabbitmq:
+    init: true
+    image: rabbitmq:4-management
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?Set RABBITMQ_USER in .env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "+S 2:2 +sbwt none +sbwtdcpu none +sbwtdio none"
+      RABBITMQ_CTL_ERL_ARGS: "+S 1:1 +sbwt none +sbwtdcpu none +sbwtdio none"
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - backend
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "check_running" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "${RABBITMQ_CPU_LIMIT:-2}"
           memory: 1G
 
 volumes:
   pgdata:
   mlartifacts:
+  rabbitmq_data:
 
 networks:
   backend:

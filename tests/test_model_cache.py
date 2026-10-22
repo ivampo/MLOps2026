@@ -108,7 +108,7 @@ async def test_inflight_request_keeps_its_model(
     assert cached.json()["cache_hit"] is True
 
 
-async def test_evicted_startup_model_is_released(monkeypatch, loaded_model):
+async def test_evicted_startup_model_is_released(monkeypatch, loaded_model, api_dependencies):
     monkeypatch.setenv("MODEL_CACHE_SIZE", "1")
     references = []
 

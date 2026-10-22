@@ -1,6 +1,7 @@
 from typing import Annotated
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 
 class HealthzResponse(BaseModel):
@@ -42,6 +43,16 @@ class ProcessRequest(BaseModel):
     samples: list[IrisFeatures] = Field(min_length=1, max_length=1000)
 
 
+class TaskMessage(ProcessRequest):
+    task_id: UUID
+    submitted_at: AwareDatetime
+
+
+class TaskAccepted(BaseModel):
+    task_id: UUID
+    status: str = "QUEUED"
+
+
 class ModelInfo(BaseModel):
     name: str
     version: str
@@ -57,6 +68,17 @@ class Prediction(BaseModel):
 class ProcessResponse(BaseModel):
     model: ModelInfo
     predictions: list[Prediction]
+
+
+class TaskResult(ProcessResponse):
+    processing_ms: float
+    total_ms: float
+
+
+class TaskCompleted(BaseModel):
+    task_id: UUID
+    status: str = "COMPLETED"
+    result: TaskResult
 
 
 class ModelSwitchRequest(BaseModel):

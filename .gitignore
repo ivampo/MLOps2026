@@ -11,3 +11,4 @@ htmlcov/
 mlruns/
 mlartifacts/
 *.db
+.DS_Store

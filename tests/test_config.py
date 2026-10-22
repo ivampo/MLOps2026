@@ -8,7 +8,7 @@ from mlops.tracking import main
 
 def test_postgres_password_with_special_characters():
     special_characters = "p@ss:/?#%"
-    config = Config(postgres_password=special_characters, _env_file=None)
+    config = Config.model_validate({"postgres_password": special_characters, "_env_file": None})
     url = config.postgres_dsn
     assert url.password == special_characters
     assert make_url(url.render_as_string(hide_password=False)).password == url.password

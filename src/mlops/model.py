@@ -3,9 +3,9 @@ from collections import OrderedDict
 from dataclasses import dataclass
 
 import mlflow
-import mlflow.sklearn
 import pandas as pd
 from mlflow import MlflowClient
+from mlflow.sklearn import load_model as load_sklearn_model
 from sklearn.pipeline import Pipeline
 
 from mlops.config import Config
@@ -42,9 +42,12 @@ def load_model(config: Config, version_number: str | None = None) -> LoadedModel
         if version_number is not None
         else client.get_model_version_by_alias(config.mlflow_model_name, config.mlflow_model_alias)
     )
-    # Фиксируем версию: alias может измениться во время скачивания модели.
     uri = f"models:/{config.mlflow_model_name}/{version.version}"
-    estimator = mlflow.sklearn.load_model(uri)
+    estimator = load_sklearn_model(uri)
+    if not isinstance(estimator, Pipeline):
+        raise TypeError("Registered model must be an sklearn Pipeline")
+    if version.run_id is None:
+        raise ValueError("Registered model has no training run")
     info = ModelInfo(
         name=config.mlflow_model_name,
         version=str(version.version),
@@ -55,8 +58,6 @@ def load_model(config: Config, version_number: str | None = None) -> LoadedModel
 
 
 class ModelCache:
-    """Process-local LRU cache with serialized loads and an atomic active reference."""
-
     def __init__(self, config: Config, initial: LoadedModel) -> None:
         self.config = config
         self.active = initial
@@ -79,7 +80,6 @@ class ModelCache:
             model = self._models.get(version)
             cache_hit = model is not None
             if model is None:
-                # Complete loading before changing either the cache or the active model.
                 model = await asyncio.to_thread(load_model, self.config, version)
                 self._models[version] = model
             self._models.move_to_end(version)
