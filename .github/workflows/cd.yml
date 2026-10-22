@@ -60,6 +60,8 @@ jobs:
           POSTGRES_USER=mlops
           POSTGRES_DB=mlops
           POSTGRES_PASSWORD=cd-test
+          RABBITMQ_USER=mlops
+          RABBITMQ_PASSWORD=cd-rabbit
           EOF
           cat > compose.release.yaml <<EOF
           services:
@@ -69,16 +71,17 @@ jobs:
               image: $IMAGE
             train:
               image: $IMAGE
+            worker:
+              image: $IMAGE
+            source:
+              image: $IMAGE
           EOF
-          docker compose -f docker-compose.yml -f compose.release.yaml pull db mlflow app
-          docker compose -f docker-compose.yml -f compose.release.yaml up -d --no-build --wait db mlflow
+          docker compose -f docker-compose.yml -f compose.release.yaml pull db rabbitmq mlflow app worker
+          docker compose -f docker-compose.yml -f compose.release.yaml up -d --no-build --wait db rabbitmq mlflow
           docker compose -f docker-compose.yml -f compose.release.yaml --profile training run --rm --no-deps train
-          docker compose -f docker-compose.yml -f compose.release.yaml up -d --no-build --wait app
+          docker compose -f docker-compose.yml -f compose.release.yaml up -d --no-build --wait app worker
           curl --fail-with-body --silent --show-error http://127.0.0.1:8000/api/v1/version
-          curl --fail-with-body --silent --show-error \
-            -H 'Content-Type: application/json' \
-            -d '{"samples":[{"sepal_length":5.1,"sepal_width":3.5,"petal_length":1.4,"petal_width":0.2}]}' \
-            http://127.0.0.1:8000/process
+          python3 scripts/smoke.py
 
       - name: Логи при ошибке
         if: failure()

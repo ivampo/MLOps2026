@@ -47,6 +47,7 @@ jobs:
       - name: тестируем
         env:
           POSTGRES_PASSWORD: ci-test-password
+          RABBITMQ_PASSWORD: ci-test-password
         run: uv run pytest --cov --cov-report=term-missing
 
   docker:
@@ -60,22 +61,20 @@ jobs:
           POSTGRES_USER=postgres
           POSTGRES_DB=mlops
           POSTGRES_PASSWORD=ci-test-passw
+          RABBITMQ_USER=mlops
+          RABBITMQ_PASSWORD=ci-rabbit
           EOF
 
       - name: запускаем
         run: |
-          docker compose up -d --build --wait db mlflow
+          docker compose up -d --build --wait db rabbitmq mlflow
           docker compose --profile training run --rm train
-          docker compose up -d --wait app
+          docker compose up -d --wait app worker
 
       - name: проверка
         run: |
           curl --fail-with-body --silent --show-error http://127.0.0.1:8000/api/v1/health
-          curl --fail-with-body --silent --show-error http://127.0.0.1:8000/api/v1/model
-          curl --fail-with-body --silent --show-error \
-            -H 'Content-Type: application/json' \
-            -d '{"samples":[{"sepal_length":5.1,"sepal_width":3.5,"petal_length":1.4,"petal_width":0.2}]}' \
-            http://127.0.0.1:8000/process
+          python3 scripts/smoke.py
 
       - name: Логи при ошибке
         if: failure()

@@ -1,12 +1,14 @@
 import logging
 from importlib.metadata import version as package_version
+from typing import cast
 
 import mlflow
-import mlflow.sklearn
 import pandas as pd
 from matplotlib.figure import Figure
 from mlflow import MlflowClient
+from mlflow.data.pandas_dataset import from_pandas
 from mlflow.models import infer_signature
+from mlflow.sklearn import SERIALIZATION_FORMAT_CLOUDPICKLE, log_model
 from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
@@ -31,7 +33,7 @@ SEED = 42
 
 
 def log_dataset(frame: pd.DataFrame, name: str, context: str) -> None:
-    dataset = mlflow.data.from_pandas(frame, source=DATA_SOURCE, targets="target", name=name)
+    dataset = from_pandas(frame, source=DATA_SOURCE, targets="target", name=name)
     mlflow.log_input(dataset, context=context)
 
 
@@ -57,7 +59,7 @@ def log_eda(frame: pd.DataFrame, splits: dict[str, pd.DataFrame]) -> str:
         figure = Figure(figsize=(6, 4), layout="constrained")
         axes = figure.subplots()
         counts = frame["target"].value_counts().reindex(CLASSES)
-        axes.bar(counts.index, counts.values)
+        axes.bar(counts.index, counts.to_numpy())
         axes.set(title="Class balance", ylabel="Samples")
         mlflow.log_figure(figure, "eda/class_balance.png")
 
@@ -71,7 +73,7 @@ def log_eda(frame: pd.DataFrame, splits: dict[str, pd.DataFrame]) -> str:
 
         figure = Figure(figsize=(7, 5), layout="constrained")
         axes = figure.subplots()
-        correlations = frame[FEATURES].corr()
+        correlations = frame.loc[:, FEATURES].corr()
         image = axes.imshow(correlations, vmin=-1, vmax=1, cmap="coolwarm")
         axes.set(xticks=range(4), yticks=range(4), xticklabels=FEATURES, yticklabels=FEATURES)
         axes.tick_params(axis="x", labelrotation=30)
@@ -101,15 +103,18 @@ def evaluate(model: Pipeline, frame: pd.DataFrame, prefix: str) -> dict[str, flo
     predictions = model.predict(features)
     probabilities = model.predict_proba(features)
     metrics = {
-        f"{prefix}_f1_macro": f1_score(target, predictions, average="macro", zero_division=0),
-        f"{prefix}_accuracy": accuracy_score(target, predictions),
-        f"{prefix}_log_loss": log_loss(target, probabilities, labels=model.classes_),
+        f"{prefix}_f1_macro": float(
+            f1_score(target, predictions, average="macro", zero_division=0)
+        ),
+        f"{prefix}_accuracy": float(accuracy_score(target, predictions)),
+        f"{prefix}_log_loss": float(log_loss(target, probabilities, labels=model.classes_)),
     }
     mlflow.log_metrics(metrics)
-    mlflow.log_dict(
+    report = cast(
+        dict[str, dict[str, float] | float],
         classification_report(target, predictions, output_dict=True, zero_division=0),
-        f"{prefix}/classification_report.json",
     )
+    mlflow.log_dict(report, f"{prefix}/classification_report.json")
     figure = Figure(figsize=(6, 5), layout="constrained")
     ConfusionMatrixDisplay.from_predictions(
         target, predictions, labels=CLASSES, ax=figure.subplots(), colorbar=False
@@ -132,9 +137,13 @@ def train() -> dict[str, str]:
     development, test = train_test_split(
         clean, test_size=0.2, stratify=clean["target"], random_state=SEED
     )
+    development = pd.DataFrame(development)
+    test = pd.DataFrame(test)
     training, validation = train_test_split(
         development, test_size=0.25, stratify=development["target"], random_state=SEED
     )
+    training = pd.DataFrame(training)
+    validation = pd.DataFrame(validation)
     eda_run_id = log_eda(frame, {"train": training, "validation": validation, "test": test})
     variants = {
         "baseline": Pipeline([("classifier", DummyClassifier(strategy="prior"))]),
@@ -167,20 +176,22 @@ def train() -> dict[str, str]:
                     "validation_rows": len(validation),
                     "test_rows": len(test),
                     "sklearn_version": package_version("scikit-learn"),
-                    **model["classifier"].get_params(),
+                    **model.named_steps["classifier"].get_params(),
                 }
             )
             model.fit(training[FEATURES], training["target"])
             mlflow.log_metric(
                 "train_f1_macro",
-                f1_score(training["target"], model.predict(training[FEATURES]), average="macro"),
+                float(
+                    f1_score(training["target"], model.predict(training[FEATURES]), average="macro")
+                ),
             )
             metrics = evaluate(model, validation, "val")
-            example = training[FEATURES].head(3)
-            info = mlflow.sklearn.log_model(
+            example = training.loc[:, FEATURES].head(3)
+            info = log_model(
                 model,
                 name="model",
-                serialization_format=mlflow.sklearn.SERIALIZATION_FORMAT_CLOUDPICKLE,
+                serialization_format=SERIALIZATION_FORMAT_CLOUDPICKLE,
                 signature=infer_signature(example, model.predict(example)),
                 input_example=example,
                 pip_requirements=[

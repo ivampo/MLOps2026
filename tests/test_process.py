@@ -44,7 +44,7 @@ async def test_process_invalid_payload(client: AsyncClient, payload: dict) -> No
 
 
 async def test_model_loaded_once(
-    monkeypatch: pytest.MonkeyPatch, loaded_model: LoadedModel
+    monkeypatch: pytest.MonkeyPatch, loaded_model: LoadedModel, api_dependencies
 ) -> None:
     loader = Mock(return_value=loaded_model)
     monkeypatch.setattr("mlops.main.load_model", loader)
@@ -60,7 +60,10 @@ async def test_model_loaded_once(
 
 
 async def test_inference_runs_outside_event_loop(
-    client: AsyncClient, monkeypatch: pytest.MonkeyPatch, loaded_model: LoadedModel
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    loaded_model: LoadedModel,
+    api_dependencies,
 ) -> None:
     event_loop_thread = threading.get_ident()
     original_predict = loaded_model.predict
@@ -77,7 +80,9 @@ async def test_inference_runs_outside_event_loop(
     assert worker_threads[0] != event_loop_thread
 
 
-async def test_startup_failure_disposes_engine(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_startup_failure_disposes_engine(
+    monkeypatch: pytest.MonkeyPatch, api_dependencies
+) -> None:
     engine = AsyncMock(spec=AsyncEngine)
     monkeypatch.setattr("mlops.main.get_engine", lambda config: engine)
     monkeypatch.setattr("mlops.main.load_model", Mock(side_effect=RuntimeError("alias missing")))

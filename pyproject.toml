@@ -13,6 +13,7 @@ dependencies = []
 mlops = "mlops.__main__:main"
 mlops-train = "mlops.train:main"
 mlops-tracking = "mlops.tracking:main"
+mlops-source = "mlops.source:main"
 
 [build-system]
 requires = ["uv_build>=0.12.15,<0.13.0"]
@@ -26,10 +27,14 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
     "ruff>=0.16.8",
+    "scikit-learn-stubs>=0.0.3",
+    "testcontainers[postgres,rabbitmq]>=4.15.0",
 ]
 web = [
+    "aio-pika>=10,<11",
     "asyncpg>=0.31.0",
     "fastapi>=0.141.1",
+    "faststream[cli,rabbit]>=0.7.7",
     "pydantic-settings>=2.15.0",
     "sqlalchemy[asyncio]>=2.0.54",
     "uvicorn[standard]>=0.53.0",
@@ -74,6 +79,9 @@ select = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]
+"tests/test_pipeline_integration.py" = ["S105", "ASYNC110"]
+"scripts/**" = ["T201", "S101", "S310", "S603", "S608"]
+"src/mlops/config.py" = ["S104"]
 
 [tool.ruff.format]
 docstring-code-format = true
@@ -82,6 +90,7 @@ docstring-code-format = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = ["integration: tests with real RabbitMQ and PostgreSQL"]
 
 [tool.coverage.run]
 source = ["src/mlops"]
