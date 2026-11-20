@@ -10,6 +10,8 @@ RUN uv sync --locked --no-dev --no-install-project --no-editable
 COPY src ./src
 
 RUN uv sync --locked --no-dev --no-editable
+COPY requirements-pipeline.txt ./
+RUN uv pip install --python .venv/bin/python -r requirements-pipeline.txt
 
 FROM python:3.12-slim-trixie
 

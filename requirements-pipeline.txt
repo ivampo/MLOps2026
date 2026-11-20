@@ -1,0 +1,6 @@
+# Additional dependencies for DZ4/DZ5; the original application keeps uv.lock.
+faststream[rabbit]==0.5.48
+opentelemetry-api==1.30.0
+opentelemetry-sdk==1.30.0
+opentelemetry-exporter-otlp-proto-http==1.30.0
+psutil==7.0.0

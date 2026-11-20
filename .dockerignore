@@ -15,3 +15,6 @@ htmlcov/
 mlruns/
 mlartifacts/
 *.db
+.uv-cache/
+examples/load.jsonl
+examples/poison.jsonl

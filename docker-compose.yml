@@ -1,104 +1,137 @@
+name: mlops2026
+
+include:
+  - observability/compose.yaml
+
 x-python: &python
   build: .
   image: mlops2026:local
-  env_file:
-    - .env
-  environment:
+  env_file: .env
+  environment: &environment
     POSTGRES_HOST: db
     MLFLOW_TRACKING_URI: http://mlflow:5000
-  networks:
-    - backend
+    RABBITMQ_URL: amqp://${RABBITMQ_USER:-mlops}:${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD}@rabbitmq:5672/
+    PIPELINE_ENABLED: "true"
+    OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-true}
+    OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+    OTEL_EXPORTER_OTLP_TIMEOUT: "1"
+    OTEL_METRIC_EXPORT_INTERVAL: "5000"
+    OTEL_METRIC_EXPORT_TIMEOUT: "1500"
+    OTEL_BSP_MAX_QUEUE_SIZE: "1024"
+    OTEL_BSP_SCHEDULE_DELAY: "1000"
+    OTEL_TRACES_SAMPLER: ${OTEL_TRACES_SAMPLER:-parentbased_always_on}
+    OTEL_SERVICE_VERSION: "0.3.0"
+    OTEL_DEPLOYMENT_ENVIRONMENT: dev
   logging:
+    driver: json-file
     options:
       max-size: 10m
       max-file: "3"
 
+x-dependencies: &dependencies
+  db:
+    condition: service_healthy
+  rabbitmq:
+    condition: service_healthy
+  train:
+    condition: service_completed_successfully
+
 services:
   db:
-    image: postgres:16-alpine
-    env_file:
-      - .env
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    networks:
-      - backend
+    image: postgres:16.4-alpine
+    env_file: .env
+    volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 10s
+      test: [CMD-SHELL, "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 20
+    mem_limit: 512m
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1G
-    logging:
-      options:
-        max-size: 10m
-        max-file: "3"
+
+  rabbitmq:
+    image: rabbitmq:4.0.5-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-mlops}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD}
+    volumes:
+      - rabbitdata:/var/lib/rabbitmq
+      - ./rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+    ports: ["127.0.0.1:15672:15672"]
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+    mem_limit: 512m
+    restart: unless-stopped
 
   mlflow:
     <<: *python
-    command: ["mlops-tracking"]
+    command: [mlops-tracking]
     depends_on:
       db:
         condition: service_healthy
-    volumes:
-      - mlartifacts:/mlartifacts
-    ports:
-      - "127.0.0.1:${MLFLOW_PORT:-5000}:5000"
+    volumes: [mlartifacts:/mlartifacts]
+    ports: ["127.0.0.1:${MLFLOW_PORT:-5000}:5000"]
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=5)"]
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=5)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    mem_limit: 1g
+    restart: unless-stopped
+
+  train:
+    <<: *python
+    command: [mlops-train]
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    mem_limit: 1g
+
+  app:
+    <<: *python
+    environment:
+      <<: *environment
+      OTEL_SERVICE_NAME: api
+    depends_on: *dependencies
+    ports: ["127.0.0.1:${APP_PORT:-8000}:8000"]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5)"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 30s
+    mem_limit: 1g
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: "1"
-          memory: 1G
 
-  train:
+  worker:
     <<: *python
-    command: ["mlops-train"]
-    profiles: ["training"]
-    depends_on:
-      mlflow:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          cpus: "1"
-          memory: 1G
-
-  app:
-    <<: *python
-    depends_on:
-      db:
-        condition: service_healthy
-      mlflow:
-        condition: service_healthy
-    ports:
-      - "${APP_PORT:-8000}:8000"
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5)"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+    command: [python, -m, mlops.worker]
+    environment:
+      <<: *environment
+      OTEL_SERVICE_NAME: worker
+    depends_on: *dependencies
+    mem_limit: 1g
+    stop_grace_period: 75s
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 1G
+
+  source:
+    <<: *python
+    command: [python, -m, mlops.source, /data/example.jsonl]
+    environment:
+      <<: *environment
+      OTEL_SERVICE_NAME: source
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    volumes: [./examples:/data:ro]
+    mem_limit: 256m
+    stop_grace_period: 15s
 
 volumes:
   pgdata:
   mlartifacts:
-
-networks:
-  backend:
+  rabbitdata:
