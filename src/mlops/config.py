@@ -27,6 +27,14 @@ class Config(BaseSettings):
     mlflow_model_name: str = "iris-classifier"
     mlflow_model_alias: str = "champion"
     model_cache_size: int = Field(default=3, ge=1, le=10)
+    rabbitmq_url: SecretStr = SecretStr("amqp://guest:guest@localhost:5672/")
+    queue_name: str = "tasks"
+    queue_limit: int = Field(default=100, ge=1)
+    max_attempts: int = Field(default=3, ge=1, le=20)
+    publish_timeout: float = Field(default=2, gt=0)
+    source_retry_delay: float = Field(default=0.2, gt=0)
+    inference_delay: float = Field(default=0.1, ge=0, le=30)
+    pipeline_enabled: bool = False
 
     @property
     def postgres_dsn(self) -> URL:

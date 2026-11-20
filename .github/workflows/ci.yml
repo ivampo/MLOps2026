@@ -27,10 +27,12 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
       - name: установка зависимостей
-        run: uv sync --locked
+        run: |
+          uv sync --locked
+          uv pip install -r requirements-pipeline.txt
 
       - name: pre-commit запускаем
-        run: uv run pre-commit run --all-files --show-diff-on-failure
+        run: uv run --no-sync pre-commit run --all-files --show-diff-on-failure
   test:
     name: тестируем
     runs-on: ubuntu-latest
@@ -42,12 +44,14 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
       - name: установка зависимостей
-        run: uv sync --locked
+        run: |
+          uv sync --locked
+          uv pip install -r requirements-pipeline.txt
 
       - name: тестируем
         env:
           POSTGRES_PASSWORD: ci-test-password
-        run: uv run pytest --cov --cov-report=term-missing
+        run: uv run --no-sync pytest --cov --cov-report=term-missing
 
   docker:
     name: сборка
@@ -59,14 +63,15 @@ jobs:
           cat > .env <<EOF
           POSTGRES_USER=postgres
           POSTGRES_DB=mlops
+          RABBITMQ_USER=mlops
+          RABBITMQ_PASSWORD=ci-rabbit-pass
+          GRAFANA_PASSWORD=ci-grafana-pass
           POSTGRES_PASSWORD=ci-test-passw
           EOF
 
       - name: запускаем
         run: |
-          docker compose up -d --build --wait db mlflow
-          docker compose --profile training run --rm train
-          docker compose up -d --wait app
+          docker compose up -d --build --wait app worker
 
       - name: проверка
         run: |
